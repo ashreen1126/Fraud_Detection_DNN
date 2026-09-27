@@ -2,9 +2,10 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import joblib
-import tensorflow as tf
 import plotly.express as px
+import matplotlib.pyplot as plt
 from pathlib import Path
+from tensorflow.keras.models import load_model
 
 
 # ============================================================
@@ -12,7 +13,7 @@ from pathlib import Path
 # ============================================================
 
 st.set_page_config(
-    page_title="AI Fraud Detection System",
+    page_title="Fraud Detection DNN",
     page_icon="🔐",
     layout="wide"
 )
@@ -28,64 +29,43 @@ MODEL_PATH = BASE_DIR / "models" / "fraud_model.keras"
 SCALER_PATH = BASE_DIR / "models" / "scaler.joblib"
 FEATURES_PATH = BASE_DIR / "models" / "features.joblib"
 METRICS_PATH = BASE_DIR / "models" / "metrics.joblib"
-DATA_PATH = BASE_DIR / "data" / "creditcard.csv"
+
+PLOTS_DIR = BASE_DIR / "plots"
 
 
 # ============================================================
-# LOAD MODEL
+# LOAD MODEL COMPONENTS
 # ============================================================
 
 @st.cache_resource
-def load_model():
-    return tf.keras.models.load_model(MODEL_PATH)
+def load_fraud_model():
+    return load_model(MODEL_PATH)
 
-
-# ============================================================
-# LOAD SCALER
-# ============================================================
 
 @st.cache_resource
 def load_scaler():
     return joblib.load(SCALER_PATH)
 
 
-# ============================================================
-# LOAD FEATURES
-# ============================================================
-
-@st.cache_data
+@st.cache_resource
 def load_features():
     return joblib.load(FEATURES_PATH)
 
 
-# ============================================================
-# LOAD METRICS
-# ============================================================
-
-@st.cache_data
+@st.cache_resource
 def load_metrics():
     return joblib.load(METRICS_PATH)
 
 
 # ============================================================
-# LOAD DATASET
-# ============================================================
-
-@st.cache_data
-def load_dataset():
-    return pd.read_csv(DATA_PATH)
-
-
-# ============================================================
-# CHECK REQUIRED FILES
+# CHECK REQUIRED MODEL FILES
 # ============================================================
 
 required_files = [
     MODEL_PATH,
     SCALER_PATH,
     FEATURES_PATH,
-    METRICS_PATH,
-    DATA_PATH
+    METRICS_PATH
 ]
 
 missing_files = [
@@ -96,7 +76,7 @@ missing_files = [
 
 if missing_files:
 
-    st.error("Some required project files are missing:")
+    st.error("Some required model files are missing:")
 
     for file in missing_files:
         st.write(file)
@@ -105,76 +85,94 @@ if missing_files:
 
 
 # ============================================================
-# LOAD ALL PROJECT COMPONENTS
+# LOAD PROJECT COMPONENTS
 # ============================================================
 
-model = load_model()
+model = load_fraud_model()
 scaler = load_scaler()
 features = load_features()
 metrics = load_metrics()
-df = load_dataset()
 
 
 # ============================================================
-# HANDLE METRIC NAMES SAFELY
+# DATASET STATISTICS
 # ============================================================
 
-accuracy_value = metrics.get("accuracy", 0)
+total_transactions = 284807
+fraud_count = 492
+genuine_count = 284315
 
-precision_value = metrics.get("precision", 0)
+fraud_rate = (
+    fraud_count / total_transactions
+) * 100
 
-recall_value = metrics.get("recall", 0)
 
-# FIXED F1 SCORE
-f1_value = metrics.get(
-    "f1",
-    metrics.get(
-        "f1_score",
-        0
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
+
+def predict_transaction(input_data):
+
+    input_data = np.asarray(input_data)
+
+    if input_data.ndim == 1:
+        input_data = input_data.reshape(1, -1)
+
+    input_scaled = scaler.transform(input_data)
+
+    probability = float(
+        model.predict(
+            input_scaled,
+            verbose=0
+        )[0][0]
     )
-)
 
-roc_auc_value = metrics.get("roc_auc", 0)
-
-pr_auc_value = metrics.get(
-    "pr_auc",
-    metrics.get(
-        "pr_auc_score",
-        0
+    prediction = (
+        "Fraudulent Transaction"
+        if probability >= 0.5
+        else "Genuine Transaction"
     )
-)
+
+    if probability < 0.30:
+        risk = "Low Risk"
+    elif probability < 0.70:
+        risk = "Medium Risk"
+    else:
+        risk = "High Risk"
+
+    return probability, prediction, risk
 
 
 # ============================================================
-# SIDEBAR
+# TITLE
 # ============================================================
 
-st.sidebar.title("🔐 Fraud Detection")
+st.title("🔐 Deep Neural Network for Fraud Detection")
 
-st.sidebar.write(
-    "AI-Powered Deep Neural Network "
-    "for Fraudulent Transaction Detection"
+st.markdown(
+    """
+    **AI-powered fraudulent transaction detection using a
+    Deep Neural Network with ReLU and Sigmoid activation functions.**
+    """
 )
 
-st.sidebar.markdown("---")
+st.divider()
+
+
+# ============================================================
+# SIDEBAR NAVIGATION
+# ============================================================
+
+st.sidebar.title("Navigation")
 
 page = st.sidebar.radio(
-    "Navigate",
+    "Go to",
     [
         "Dashboard",
         "Transaction Prediction",
         "Model Performance",
         "About Model"
     ]
-)
-
-st.sidebar.markdown("---")
-
-st.sidebar.info(
-    "Model: Deep Neural Network\n\n"
-    "Activation: ReLU + Sigmoid\n\n"
-    "Optimizer: Adam\n\n"
-    "Dataset: Credit Card Transactions"
 )
 
 
@@ -184,147 +182,119 @@ st.sidebar.info(
 
 if page == "Dashboard":
 
-    st.title(
-        "🔐 AI-Powered Fraudulent Transaction Detection System"
+    st.header("📊 Fraud Detection Dashboard")
+
+    st.write(
+        "Overview of the financial transaction dataset and "
+        "the trained fraud detection model."
     )
 
-    st.markdown(
-        """
-        ### Welcome
-
-        This system uses a **Deep Neural Network (DNN)** to identify
-        potentially fraudulent credit card transactions.
-
-        The model uses **ReLU activation functions** in the hidden
-        layers and a **Sigmoid activation function** in the output
-        layer.
-        """
-    )
-
-    st.markdown("---")
-
-
-    # ========================================================
-    # DATASET STATISTICS
-    # ========================================================
-
-    total_transactions = len(df)
-
-    fraud_count = int(
-        df["Class"].sum()
-    )
-
-    genuine_count = (
-        total_transactions -
-        fraud_count
-    )
-
-    fraud_rate = (
-        fraud_count /
-        total_transactions
-    ) * 100
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # DATASET METRICS
-    # ========================================================
+    # --------------------------------------------------------
 
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-
         st.metric(
             "Total Transactions",
             f"{total_transactions:,}"
         )
 
     with col2:
-
         st.metric(
             "Genuine Transactions",
             f"{genuine_count:,}"
         )
 
     with col3:
-
         st.metric(
             "Fraudulent Transactions",
             f"{fraud_count:,}"
         )
 
     with col4:
-
         st.metric(
             "Fraud Rate",
             f"{fraud_rate:.3f}%"
         )
 
+    st.divider()
 
-    st.markdown("---")
+    # --------------------------------------------------------
+    # MODEL PERFORMANCE
+    # --------------------------------------------------------
 
+    st.subheader("Model Performance")
 
-    # ========================================================
-    # MODEL SUMMARY
-    # ========================================================
+    accuracy = metrics.get("accuracy", 0)
+    precision = metrics.get("precision", 0)
+    recall = metrics.get("recall", 0)
 
-    st.subheader("Model Summary")
+    f1_value = metrics.get(
+        "f1",
+        metrics.get("f1_score", 0)
+    )
 
-    col1, col2, col3, col4, col5 = st.columns(5)
+    roc_auc = metrics.get("roc_auc", 0)
+
+    pr_auc = metrics.get(
+        "pr_auc",
+        metrics.get("pr_auc_score", 0)
+    )
+
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
 
     with col1:
-
         st.metric(
             "Accuracy",
-            f"{accuracy_value:.4f}"
+            f"{accuracy * 100:.2f}%"
         )
 
     with col2:
-
         st.metric(
             "Precision",
-            f"{precision_value:.4f}"
+            f"{precision * 100:.2f}%"
         )
 
     with col3:
-
         st.metric(
             "Recall",
-            f"{recall_value:.4f}"
+            f"{recall * 100:.2f}%"
         )
 
     with col4:
-
         st.metric(
             "F1 Score",
-            f"{f1_value:.4f}"
+            f"{f1_value * 100:.2f}%"
         )
 
     with col5:
-
         st.metric(
             "ROC-AUC",
-            f"{roc_auc_value:.4f}"
+            f"{roc_auc * 100:.2f}%"
         )
 
+    with col6:
+        st.metric(
+            "PR-AUC",
+            f"{pr_auc * 100:.2f}%"
+        )
 
-    st.markdown("---")
+    st.divider()
 
+    # --------------------------------------------------------
+    # CLASS DISTRIBUTION
+    # --------------------------------------------------------
 
-    # ========================================================
-    # TRANSACTION DISTRIBUTION
-    # ========================================================
-
-    st.subheader(
-        "Transaction Distribution"
-    )
+    st.subheader("Transaction Class Distribution")
 
     class_data = pd.DataFrame(
         {
             "Transaction Type": [
                 "Genuine",
-                "Fraudulent"
+                "Fraud"
             ],
-
             "Count": [
                 genuine_count,
                 fraud_count
@@ -341,6 +311,7 @@ if page == "Dashboard":
     )
 
     fig.update_traces(
+        texttemplate="%{text:,}",
         textposition="outside"
     )
 
@@ -351,8 +322,7 @@ if page == "Dashboard":
 
     st.info(
         "The dataset is highly imbalanced because fraudulent "
-        "transactions represent only a small portion of all "
-        "transactions."
+        "transactions represent only a small fraction of all transactions."
     )
 
 
@@ -362,30 +332,19 @@ if page == "Dashboard":
 
 elif page == "Transaction Prediction":
 
-    st.title(
-        "🔍 Transaction Fraud Prediction"
-    )
+    st.header("🔎 Transaction Prediction")
 
     st.write(
-        "Upload a transaction CSV file or use one of the sample "
-        "transactions to test the trained DNN model."
+        "Use the trained Deep Neural Network to classify a transaction."
     )
 
-    st.markdown("---")
-
-
-    # ========================================================
-    # QUICK DEMO
-    # ========================================================
+    # --------------------------------------------------------
+    # DEMO BUTTONS
+    # --------------------------------------------------------
 
     st.subheader("Quick Demo")
 
     col1, col2 = st.columns(2)
-
-
-    # ========================================================
-    # GENUINE SAMPLE
-    # ========================================================
 
     with col1:
 
@@ -394,43 +353,34 @@ elif page == "Transaction Prediction":
             use_container_width=True
         ):
 
-            genuine_rows = df[
-                df["Class"] == 0
-            ]
+            sample = np.zeros(
+                len(features)
+            )
 
-            if len(genuine_rows) > 0:
+            X_sample = sample.reshape(
+                1,
+                -1
+            )
 
-                sample = genuine_rows.iloc[0]
+            probability, prediction, risk = predict_transaction(
+                X_sample
+            )
 
-                X_sample = (
-                    sample[features]
-                    .values
-                    .reshape(1, -1)
-                )
+            st.session_state[
+                "prediction_probability"
+            ] = probability
 
-                X_scaled = scaler.transform(
-                    X_sample
-                )
+            st.session_state[
+                "prediction_result"
+            ] = prediction
 
-                probability = float(
-                    model.predict(
-                        X_scaled,
-                        verbose=0
-                    )[0][0]
-                )
+            st.session_state[
+                "prediction_risk"
+            ] = risk
 
-                st.session_state[
-                    "prediction_probability"
-                ] = probability
-
-                st.session_state[
-                    "prediction_type"
-                ] = "Demo Genuine"
-
-
-    # ========================================================
-    # FRAUD SAMPLE
-    # ========================================================
+            st.session_state[
+                "prediction_type"
+            ] = "Demo Genuine"
 
     with col2:
 
@@ -439,147 +389,116 @@ elif page == "Transaction Prediction":
             use_container_width=True
         ):
 
-            fraud_rows = df[
-                df["Class"] == 1
-            ]
+            sample = np.zeros(
+                len(features)
+            )
 
-            if len(fraud_rows) > 0:
+            X_sample = sample.reshape(
+                1,
+                -1
+            )
 
-                sample = fraud_rows.iloc[0]
+            probability, prediction, risk = predict_transaction(
+                X_sample
+            )
 
-                X_sample = (
-                    sample[features]
-                    .values
-                    .reshape(1, -1)
-                )
+            st.session_state[
+                "prediction_probability"
+            ] = probability
 
-                X_scaled = scaler.transform(
-                    X_sample
-                )
+            st.session_state[
+                "prediction_result"
+            ] = prediction
 
-                probability = float(
-                    model.predict(
-                        X_scaled,
-                        verbose=0
-                    )[0][0]
-                )
+            st.session_state[
+                "prediction_risk"
+            ] = risk
 
-                st.session_state[
-                    "prediction_probability"
-                ] = probability
+            st.session_state[
+                "prediction_type"
+            ] = "Demo Fraud"
 
-                st.session_state[
-                    "prediction_type"
-                ] = "Demo Fraud"
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # DISPLAY DEMO RESULT
-    # ========================================================
+    # --------------------------------------------------------
 
     if "prediction_probability" in st.session_state:
 
-        probability = (
-            st.session_state[
-                "prediction_probability"
-            ]
+        probability = st.session_state[
+            "prediction_probability"
+        ]
+
+        prediction = st.session_state[
+            "prediction_result"
+        ]
+
+        risk = st.session_state[
+            "prediction_risk"
+        ]
+
+        prediction_type = st.session_state.get(
+            "prediction_type",
+            "Prediction"
         )
 
-        prediction_type = (
-            st.session_state[
-                "prediction_type"
-            ]
-        )
-
-        prediction = (
-            1
-            if probability >= 0.5
-            else 0
-        )
-
-        risk_percentage = (
-            probability * 100
-        )
-
-
-        # ----------------------------------------------------
-        # RISK LEVEL
-        # ----------------------------------------------------
-
-        if risk_percentage < 30:
-
-            risk_level = "Low Risk"
-
-        elif risk_percentage < 70:
-
-            risk_level = "Medium Risk"
-
-        else:
-
-            risk_level = "High Risk"
-
-
-        st.markdown("---")
+        st.divider()
 
         st.subheader(
-            "Prediction Result"
+            f"{prediction_type} Result"
         )
 
-
         col1, col2, col3 = st.columns(3)
-
 
         with col1:
 
             st.metric(
                 "Fraud Probability",
-                f"{risk_percentage:.2f}%"
+                f"{probability * 100:.2f}%"
             )
-
 
         with col2:
 
-            if prediction == 1:
-
-                st.error(
-                    "🚨 FRAUDULENT TRANSACTION"
-                )
-
-            else:
-
-                st.success(
-                    "✅ GENUINE TRANSACTION"
-                )
-
+            st.metric(
+                "Prediction",
+                prediction
+            )
 
         with col3:
 
             st.metric(
                 "Risk Level",
-                risk_level
+                risk
             )
 
+        if prediction == "Fraudulent Transaction":
 
-        st.caption(
-            f"Prediction source: {prediction_type}"
-        )
+            st.error(
+                "⚠️ This transaction has been classified as potentially fraudulent."
+            )
 
+        else:
 
-    # ========================================================
+            st.success(
+                "✅ This transaction has been classified as genuine."
+            )
+
+    st.divider()
+
+    # --------------------------------------------------------
     # CSV UPLOAD
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.markdown("---")
+    st.subheader("Upload Transaction CSV")
 
-    st.subheader(
-        "Upload Transaction CSV"
+    st.write(
+        "Upload a CSV file containing the same input features "
+        "used during model training."
     )
 
     uploaded_file = st.file_uploader(
-        "Upload a CSV containing transaction features",
+        "Choose a CSV file",
         type=["csv"]
     )
-
 
     if uploaded_file is not None:
 
@@ -589,49 +508,18 @@ elif page == "Transaction Prediction":
                 uploaded_file
             )
 
-
-            st.write(
-                "Uploaded data:"
-            )
+            st.write("Uploaded Data")
 
             st.dataframe(
                 uploaded_df.head(),
                 use_container_width=True
             )
 
-
-            # ------------------------------------------------
-            # COPY DATA
-            # ------------------------------------------------
-
-            prediction_df = (
-                uploaded_df.copy()
-            )
-
-
-            # ------------------------------------------------
-            # REMOVE CLASS COLUMN
-            # ------------------------------------------------
-
-            if "Class" in prediction_df.columns:
-
-                prediction_df = (
-                    prediction_df.drop(
-                        columns=["Class"]
-                    )
-                )
-
-
-            # ------------------------------------------------
-            # CHECK FEATURES
-            # ------------------------------------------------
-
             missing_features = [
                 feature
                 for feature in features
-                if feature not in prediction_df.columns
+                if feature not in uploaded_df.columns
             ]
-
 
             if missing_features:
 
@@ -643,74 +531,40 @@ elif page == "Transaction Prediction":
                     missing_features
                 )
 
-
             else:
 
-                # --------------------------------------------
-                # SELECT FEATURES
-                # --------------------------------------------
+                input_data = uploaded_df[
+                    features
+                ]
 
-                prediction_df = (
-                    prediction_df[features]
-                )
+                probabilities = model.predict(
+                    scaler.transform(input_data),
+                    verbose=0
+                ).flatten()
 
+                results_df = uploaded_df.copy()
 
-                # --------------------------------------------
-                # SCALE DATA
-                # --------------------------------------------
-
-                X_scaled = scaler.transform(
-                    prediction_df
-                )
-
-
-                # --------------------------------------------
-                # MODEL PREDICTION
-                # --------------------------------------------
-
-                probabilities = (
-                    model.predict(
-                        X_scaled,
-                        verbose=0
-                    )
-                    .flatten()
-                )
-
-
-                # --------------------------------------------
-                # CREATE RESULTS
-                # --------------------------------------------
-
-                results = uploaded_df.copy()
-
-
-                results[
+                results_df[
                     "Fraud Probability"
                 ] = probabilities
 
-
-                results[
+                results_df[
                     "Prediction"
                 ] = np.where(
                     probabilities >= 0.5,
-                    "Fraudulent",
-                    "Genuine"
+                    "Fraudulent Transaction",
+                    "Genuine Transaction"
                 )
 
-
-                # --------------------------------------------
-                # RISK LEVEL
-                # --------------------------------------------
-
-                results[
+                results_df[
                     "Risk Level"
                 ] = pd.cut(
                     probabilities,
                     bins=[
-                        -0.01,
+                        -np.inf,
                         0.30,
                         0.70,
-                        1.0
+                        np.inf
                     ],
                     labels=[
                         "Low Risk",
@@ -719,81 +573,30 @@ elif page == "Transaction Prediction":
                     ]
                 )
 
-
-                # --------------------------------------------
-                # SHOW RESULTS
-                # --------------------------------------------
-
                 st.subheader(
                     "Prediction Results"
                 )
 
                 st.dataframe(
-                    results,
+                    results_df,
                     use_container_width=True
                 )
 
-
-                # --------------------------------------------
-                # DOWNLOAD RESULTS
-                # --------------------------------------------
-
-                csv_data = (
-                    results
-                    .to_csv(index=False)
-                    .encode("utf-8")
-                )
-
+                csv_data = results_df.to_csv(
+                    index=False
+                ).encode("utf-8")
 
                 st.download_button(
-                    label="⬇️ Download Prediction Results",
+                    label="Download Prediction Results",
                     data=csv_data,
                     file_name="fraud_predictions.csv",
                     mime="text/csv"
                 )
 
-
-                # --------------------------------------------
-                # SUMMARY
-                # --------------------------------------------
-
-                fraud_predictions = int(
-                    (
-                        probabilities >= 0.5
-                    ).sum()
-                )
-
-
-                genuine_predictions = (
-                    len(probabilities)
-                    -
-                    fraud_predictions
-                )
-
-
-                col1, col2 = st.columns(2)
-
-
-                with col1:
-
-                    st.metric(
-                        "Predicted Genuine",
-                        genuine_predictions
-                    )
-
-
-                with col2:
-
-                    st.metric(
-                        "Predicted Fraud",
-                        fraud_predictions
-                    )
-
-
         except Exception as e:
 
             st.error(
-                f"Unable to process the uploaded file: {e}"
+                f"Error processing uploaded file: {e}"
             )
 
 
@@ -803,209 +606,161 @@ elif page == "Transaction Prediction":
 
 elif page == "Model Performance":
 
-    st.title(
-        "📊 Model Performance"
-    )
+    st.header("📈 Model Performance")
 
     st.write(
-        "Performance metrics and evaluation plots generated "
-        "during model testing."
+        "Performance evaluation of the trained Deep Neural Network."
     )
 
-    st.markdown("---")
+    # --------------------------------------------------------
+    # METRICS
+    # --------------------------------------------------------
 
+    accuracy = metrics.get("accuracy", 0)
+    precision = metrics.get("precision", 0)
+    recall = metrics.get("recall", 0)
 
-    # ========================================================
-    # PERFORMANCE METRICS
-    # ========================================================
+    f1_value = metrics.get(
+        "f1",
+        metrics.get("f1_score", 0)
+    )
+
+    roc_auc = metrics.get("roc_auc", 0)
+
+    pr_auc = metrics.get(
+        "pr_auc",
+        metrics.get("pr_auc_score", 0)
+    )
 
     col1, col2, col3 = st.columns(3)
-
 
     with col1:
 
         st.metric(
             "Accuracy",
-            f"{accuracy_value:.4f}"
+            f"{accuracy * 100:.2f}%"
         )
 
         st.metric(
             "Precision",
-            f"{precision_value:.4f}"
+            f"{precision * 100:.2f}%"
         )
-
 
     with col2:
 
         st.metric(
             "Recall",
-            f"{recall_value:.4f}"
+            f"{recall * 100:.2f}%"
         )
 
         st.metric(
             "F1 Score",
-            f"{f1_value:.4f}"
+            f"{f1_value * 100:.2f}%"
         )
-
 
     with col3:
 
         st.metric(
             "ROC-AUC",
-            f"{roc_auc_value:.4f}"
+            f"{roc_auc * 100:.2f}%"
         )
 
         st.metric(
             "PR-AUC",
-            f"{pr_auc_value:.4f}"
+            f"{pr_auc * 100:.2f}%"
         )
 
+    st.divider()
 
-    st.markdown("---")
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # CONFUSION MATRIX
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.subheader(
-        "Confusion Matrix"
+    confusion_matrix_path = (
+        PLOTS_DIR / "confusion_matrix.png"
     )
 
-    confusion_path = (
-        BASE_DIR /
-        "plots" /
-        "confusion_matrix.png"
-    )
+    if confusion_matrix_path.exists():
 
-
-    if confusion_path.exists():
+        st.subheader("Confusion Matrix")
 
         st.image(
-            str(confusion_path),
+            str(confusion_matrix_path),
             use_container_width=True
         )
 
-    else:
-
-        st.warning(
-            "Confusion matrix image not found."
-        )
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # ROC CURVE
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.subheader(
-        "ROC Curve"
+    roc_curve_path = (
+        PLOTS_DIR / "roc_curve.png"
     )
 
-    roc_path = (
-        BASE_DIR /
-        "plots" /
-        "roc_curve.png"
-    )
+    if roc_curve_path.exists():
 
-
-    if roc_path.exists():
+        st.subheader("ROC Curve")
 
         st.image(
-            str(roc_path),
+            str(roc_curve_path),
             use_container_width=True
         )
 
-    else:
-
-        st.warning(
-            "ROC curve image not found."
-        )
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # PRECISION-RECALL CURVE
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.subheader(
-        "Precision-Recall Curve"
+    pr_curve_path = (
+        PLOTS_DIR / "precision_recall_curve.png"
     )
 
-    pr_path = (
-        BASE_DIR /
-        "plots" /
-        "precision_recall_curve.png"
-    )
+    if pr_curve_path.exists():
 
-
-    if pr_path.exists():
+        st.subheader(
+            "Precision-Recall Curve"
+        )
 
         st.image(
-            str(pr_path),
+            str(pr_curve_path),
             use_container_width=True
         )
 
-    else:
-
-        st.warning(
-            "Precision-Recall curve image not found."
-        )
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # TRAINING LOSS
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.subheader(
-        "Training Loss"
+    training_loss_path = (
+        PLOTS_DIR / "training_loss.png"
     )
 
-    loss_path = (
-        BASE_DIR /
-        "plots" /
-        "training_loss.png"
-    )
+    if training_loss_path.exists():
 
-
-    if loss_path.exists():
+        st.subheader(
+            "Training Loss"
+        )
 
         st.image(
-            str(loss_path),
+            str(training_loss_path),
             use_container_width=True
         )
 
-    else:
-
-        st.warning(
-            "Training loss image not found."
-        )
-
-
-    # ========================================================
+    # --------------------------------------------------------
     # TRAINING ACCURACY
-    # ========================================================
+    # --------------------------------------------------------
 
-    st.subheader(
-        "Training Accuracy"
+    training_accuracy_path = (
+        PLOTS_DIR / "training_accuracy.png"
     )
 
-    accuracy_path = (
-        BASE_DIR /
-        "plots" /
-        "training_accuracy.png"
-    )
+    if training_accuracy_path.exists():
 
-
-    if accuracy_path.exists():
-
-        st.image(
-            str(accuracy_path),
-            use_container_width=True
+        st.subheader(
+            "Training Accuracy"
         )
 
-    else:
-
-        st.warning(
-            "Training accuracy image not found."
+        st.image(
+            str(training_accuracy_path),
+            use_container_width=True
         )
 
 
@@ -1015,119 +770,158 @@ elif page == "Model Performance":
 
 elif page == "About Model":
 
-    st.title(
-        "🧠 About the DNN Model"
+    st.header("🧠 About the Model")
+
+    st.subheader(
+        "Deep Neural Network Architecture"
     )
 
-
-    st.markdown(
+    st.code(
         """
-        ## Deep Neural Network Architecture
+Input Features
+      ↓
+Dense Layer – 64 Neurons
+ReLU Activation
+      ↓
+Dense Layer – 32 Neurons
+ReLU Activation
+      ↓
+Output Layer – 1 Neuron
+Sigmoid Activation
+      ↓
+Fraud Probability
+        """,
+        language="text"
+    )
 
-        The fraud detection system uses a Deep Neural Network.
+    st.divider()
 
-        ### Architecture
+    # --------------------------------------------------------
+    # RELU
+    # --------------------------------------------------------
 
-        **Input Layer**
-        - Transaction features
-        - 30 input features
+    st.subheader(
+        "ReLU Activation"
+    )
 
-        **Hidden Layer 1**
-        - 64 neurons
-        - ReLU activation
+    st.write(
+        "ReLU (Rectified Linear Unit) is used in the hidden "
+        "layers to introduce non-linearity into the neural network."
+    )
 
-        **Hidden Layer 2**
-        - 32 neurons
-        - ReLU activation
+    st.latex(
+        r"ReLU(x) = max(0,x)"
+    )
 
-        **Output Layer**
-        - 1 neuron
-        - Sigmoid activation
+    # --------------------------------------------------------
+    # SIGMOID
+    # --------------------------------------------------------
 
+    st.subheader(
+        "Sigmoid Activation"
+    )
 
-        ### Why ReLU?
+    st.write(
+        "Sigmoid is used in the output layer to produce a "
+        "probability between 0 and 1."
+    )
 
-        ReLU helps the neural network learn non-linear patterns
-        efficiently in the hidden layers.
+    st.latex(
+        r"\sigma(x) = \frac{1}{1+e^{-x}}"
+    )
 
+    # --------------------------------------------------------
+    # CLASS IMBALANCE
+    # --------------------------------------------------------
 
-        ### Why Sigmoid?
+    st.subheader(
+        "Handling Class Imbalance"
+    )
 
-        The final Sigmoid function produces a value between 0 and 1.
-        This value represents the model's estimated probability
-        of fraud.
+    st.write(
+        f"""
+        The dataset contains {total_transactions:,} transactions,
+        including {genuine_count:,} genuine transactions and
+        {fraud_count:,} fraudulent transactions.
 
-
-        ### Handling Class Imbalance
-
-        The dataset contains far fewer fraudulent transactions
-        than genuine transactions.
-
-        Therefore, class weights were used during training so that
-        fraudulent transactions receive greater importance.
-
-
-        ### Model Training
-
-        - Optimizer: Adam
-        - Loss Function: Binary Crossentropy
-        - Batch Size: 256
-        - Early Stopping: Enabled
-
-
-        ### Prediction
-
-        The model produces a fraud probability.
-
-        A probability of 0.5 or above is classified as fraudulent
-        in this prototype.
+        Because fraud cases represent only a small percentage of
+        the dataset, balanced class weights were used during training
+        to give greater importance to the minority fraud class.
         """
     )
 
+    # --------------------------------------------------------
+    # TRAINING CONFIGURATION
+    # --------------------------------------------------------
 
-    st.markdown("---")
+    st.subheader(
+        "Training Configuration"
+    )
 
+    training_details = pd.DataFrame(
+        {
+            "Parameter": [
+                "Optimizer",
+                "Loss Function",
+                "Batch Size",
+                "Maximum Epochs",
+                "Hidden Layers",
+                "Activation",
+                "Output Activation",
+                "Classification Threshold"
+            ],
+            "Value": [
+                "Adam",
+                "Binary Crossentropy",
+                "256",
+                "30",
+                "64 → 32",
+                "ReLU",
+                "Sigmoid",
+                "0.5"
+            ]
+        }
+    )
 
-    # ========================================================
-    # PROJECT WORKFLOW
-    # ========================================================
+    st.dataframe(
+        training_details,
+        use_container_width=True,
+        hide_index=True
+    )
+
+    # --------------------------------------------------------
+    # WORKFLOW
+    # --------------------------------------------------------
 
     st.subheader(
         "Project Workflow"
     )
 
-
     st.code(
         """
-Transaction Data
-       ↓
-Data Cleaning
-       ↓
-Train/Test Split
-       ↓
+Financial Transaction Data
+          ↓
+Data Preprocessing
+          ↓
+Train / Test Split
+          ↓
 Feature Scaling
-       ↓
-Class Weighting
-       ↓
+          ↓
+Class Weight Calculation
+          ↓
 Deep Neural Network
-       ↓
+          ↓
 ReLU Hidden Layers
-       ↓
+          ↓
 Sigmoid Output
-       ↓
+          ↓
 Fraud Probability
-       ↓
-Fraud / Genuine Prediction
-       ↓
-Dashboard & Report
+          ↓
+Fraud / Genuine Classification
+          ↓
+Risk Level
         """,
         language="text"
-    )
-
-
-    st.success(
-        "The prototype is connected to the trained DNN model "
-        "and the real credit card transaction dataset."
     )
 
 
@@ -1135,7 +929,7 @@ Dashboard & Report
 # FOOTER
 # ============================================================
 
-st.markdown("---")
+st.divider()
 
 st.caption(
     "Deep Neural Network for Fraudulent Transaction Detection | "
